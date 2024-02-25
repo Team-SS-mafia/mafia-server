@@ -32,23 +32,19 @@ export class EventsGateway
 
   handleDisconnect(client: Socket) {
     console.log('disconnect : ',client.id);
+    const lobbyclients = EventsGateway.clients[this.lobby];
     // 모든 roomid에 대해 클라이언트를 찾아서 삭제
     for (const roomId in EventsGateway.clients) {
-      const clients = EventsGateway.clients[this.lobby]; 
-      const index = EventsGateway.clients[roomId].indexOf(client);
+      const roomClients = EventsGateway.clients[roomId];
+      const index = roomClients.indexOf(client);
       if (index !== -1) {
-        // 해당 roomid의 배열에서 클라이언트 삭제
-        EventsGateway.clients[roomId].splice(index, 1);
-        // 만약 해당 roomid의 배열이 빈 배열이라면 해당 roomid를 삭제
-        if (EventsGateway.clients[roomId].length === 0) {
+        roomClients.splice(index, 1);
+        if (roomClients.length === 0) {
           delete EventsGateway.clients[roomId];
-          // 클라이언트 리로드를 브로드캐스트
-          
-          // roomId가 0인 socket들에게 broadcast
-          for (var i = 0; i<clients.length; i++){
-            clients[i].emit('reloadRoom', roomId, "delete");
+          for ( var i = 0; i<lobbyclients.length; i++){
+            lobbyclients[i].emit('reloadRoom', roomId, 'delete');
           }
-        } 
+        }
       }
     }
   }
@@ -66,10 +62,12 @@ export class EventsGateway
   // 클라이언트에서 'message' 이벤트를 수신할 때 실행되는 핸들러
   @SubscribeMessage('message')
   handleMessage(@MessageBody() data: string) {
-    const clients = EventsGateway.clients[data[0]];
-
-    for ( var i = 0; i<clients.length; i++ ){
-      clients[i].emit('message', data[0], data[1]);
+    const roomId = data[0];
+    const clients = EventsGateway.clients[roomId];
+    if (clients) {
+      for (const client of clients) {
+        client.emit('message', data[0], data[1]);
+      }
     }
   }
 
@@ -254,5 +252,15 @@ export class EventsGateway
     }
 
     return userInfo;
+  }
+
+  // 클라이언트에게 방 리로드 이벤트를 브로드캐스트하는 메서드
+  private broadcastReloadRoom(lobby: number, roomId: any, func: string) {
+    const clients = EventsGateway.clients[lobby];
+    if (clients && func === 'delete') {
+      for (const client of clients) {
+        client.emit('reloadRoom', roomId, func);
+      }
+    }
   }
 }
