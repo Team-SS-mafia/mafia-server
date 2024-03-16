@@ -8,16 +8,16 @@ import {
     WebSocketServer,
   } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { LobbysGateway } from '../lobby/lobbys.gateway';
 
 @WebSocketGateway({ transports: ['websocket'] })
 export class EventsGateway
   implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
 {
+  constructor(private readonly lobbysGateway: LobbysGateway) {}
+
   // 방 번호에 따른 클라이언트를 관리하는 오브젝트
   private static clients: { [roomId: number]: Socket[] } = {};
-
-  // lobby number
-  readonly lobby: number = 0;
 
   // 방 개수 관리용 변수
   private static roomCount = 0;
@@ -32,7 +32,7 @@ export class EventsGateway
 
   handleDisconnect(client: Socket) {
     console.log('disconnect : ',client.id);
-    const lobbyclients = EventsGateway.clients[this.lobby];
+    const lobbyclients = EventsGateway.clients[this.lobbysGateway.getLobby()];
     // 모든 roomid에 대해 클라이언트를 찾아서 삭제
     for (const roomId in EventsGateway.clients) {
       const roomClients = EventsGateway.clients[roomId];
@@ -49,14 +49,13 @@ export class EventsGateway
     }
   }
 
-  // default lobby = 0
   handleConnection(client: Socket) {
     console.log('connect : ',client.id);
-    if (!EventsGateway.clients[this.lobby]) {
+    if (!EventsGateway.clients[this.lobbysGateway.getLobby()]) {
       // 만약 해당 roomid의 배열이 없다면 새로 생성
-      EventsGateway.clients[this.lobby] = [];
+      EventsGateway.clients[this.lobbysGateway.getLobby()] = [];
     }
-    EventsGateway.clients[this.lobby].push(client);
+    EventsGateway.clients[this.lobbysGateway.getLobby()].push(client);
   }
 
   // 클라이언트에서 'message' 이벤트를 수신할 때 실행되는 핸들러
@@ -82,13 +81,13 @@ export class EventsGateway
     EventsGateway.clients[num].push(client);
     
     // 기존 로비에서 나가는 로직
-    this.funcQuitLobby(client);
+    this.lobbysGateway.funcQuitLobby(client, EventsGateway.clients[this.lobbysGateway.getLobby()]);
 
     // 방 변경이 완료 됐음을 알리는 로직
     client.emit('changeRoom', num);
     
     // 로비 상태를 업데이트하는 로직
-    const clients = EventsGateway.clients[this.lobby];
+    const clients = EventsGateway.clients[this.lobbysGateway.getLobby()];
     
     for ( var i = 0; i<clients.length; i++){
       clients[i].emit('reloadRoom', num, 'create', client.id, EventsGateway.clients[num].length);
@@ -99,7 +98,7 @@ export class EventsGateway
   @SubscribeMessage('quitRoom')
   handleQuitRoom(client: Socket, room: number) {
     const roomClients = EventsGateway.clients[room];
-    const clients = EventsGateway.clients[this.lobby];
+    const clients = EventsGateway.clients[this.lobbysGateway.getLobby()];
     if (roomClients){
       const index = roomClients.indexOf(client);
 
@@ -108,7 +107,7 @@ export class EventsGateway
 
         // 배열에서 빈 공간을 없애고 재정렬
         EventsGateway.clients[room] = roomClients.filter(Boolean);
-        EventsGateway.clients[this.lobby].push(client);
+        EventsGateway.clients[this.lobbysGateway.getLobby()].push(client);
 
         // 만약 해당 방에 더 이상 클라이언트가 없으면 해당 방 번호 삭제
         if (roomClients.length == 0) {
@@ -135,10 +134,10 @@ export class EventsGateway
   @SubscribeMessage('joinRoom')
   handleJoinRoom(client: Socket, room: number){
     const roomClients = EventsGateway.clients[room];
-    const clients = EventsGateway.clients[this.lobby];
+    const clients = EventsGateway.clients[this.lobbysGateway.getLobby()];
     if (roomClients && roomClients.length>0 && roomClients.length<8){
       // client room join
-      this.funcQuitLobby(client);
+      this.lobbysGateway.funcQuitLobby(client, EventsGateway.clients[this.lobbysGateway.getLobby()]);
       roomClients.push(client);
       client.emit('SuccessJoinRoom', room);
       
@@ -172,7 +171,7 @@ export class EventsGateway
   @SubscribeMessage('startGame')
   handleStartGame(client: Socket, roomId: number){
     const roomClients = EventsGateway.clients[roomId];
-    const clients = EventsGateway.clients[this.lobby];
+    const clients = EventsGateway.clients[this.lobbysGateway.getLobby()];
 
     for ( var i = 0; i<roomClients.length; i++){
       roomClients[i].emit('startGame', roomId);
@@ -212,9 +211,9 @@ export class EventsGateway
 
   // 로비에서 나가는 함수
   private funcQuitLobby(client: Socket){
-    const index = EventsGateway.clients[this.lobby].indexOf(client);
+    const index = EventsGateway.clients[this.lobbysGateway.getLobby()].indexOf(client);
       if (index !== -1) {
-        EventsGateway.clients[this.lobby].splice(index, 1);
+        EventsGateway.clients[this.lobbysGateway.getLobby()].splice(index, 1);
     }
   }
 
@@ -254,13 +253,4 @@ export class EventsGateway
     return userInfo;
   }
 
-  // 클라이언트에게 방 리로드 이벤트를 브로드캐스트하는 메서드
-  private broadcastReloadRoom(lobby: number, roomId: any, func: string) {
-    const clients = EventsGateway.clients[lobby];
-    if (clients && func === 'delete') {
-      for (const client of clients) {
-        client.emit('reloadRoom', roomId, func);
-      }
-    }
-  }
 }

@@ -9,5 +9,8 @@ import {
   @WebSocketGateway({ transports: ['websocket'] })
   export class RoomsGateway
   {
-  
+    // lobby number
+    readonly lobby: number = 0;
+
+    
   }

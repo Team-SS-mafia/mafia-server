@@ -3,5 +3,6 @@ import { LobbysGateway } from './lobbys.gateway';
 
 @Module({
   providers: [LobbysGateway],
+  exports: [LobbysGateway],
 })
 export class LobbysModule {}  
